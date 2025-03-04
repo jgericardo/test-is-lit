@@ -36,6 +36,7 @@ with st.sidebar:
     st.markdown("- Identity attacks")
     st.markdown("- Flirtation")
     st.markdown("- Passive Aggressive")
+    st.markdown("- Sarcasm")
     
     st.divider()
     st.write("Developed by **The Attic AI** as a proof of concept.")
@@ -313,6 +314,7 @@ if st.button("Analyze Text 🔎"):
                         "identity_attack": "#DDA0DD",  # Plum
                         "flirtation": "#D8BFD8",       # Thistle
                         "passive_aggressive": "#FDFD96", # Yellow
+                        "sarcasm": "#20B2AA", # Light Sea Green
                         "harmful_content": "#faa"      # Default
                     }.get(segment["type"], "#faa")
                     
