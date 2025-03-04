@@ -338,7 +338,7 @@ if st.button("Analyze Text 🔎"):
                     st.markdown(f"- Replace '**{element['text']}**' with '**{element['alternative']}**' ({element['type']})")
                 
                 st.markdown("### Suggested Revision:")
-                st.success(results["reworded_sentence"])
+                st.success(results["reworded_message"])
             
             # Show raw analysis (can be hidden in production)
             with st.expander("Show detailed analysis"):
