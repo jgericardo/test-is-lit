@@ -8,14 +8,23 @@ from annotated_text import annotated_text
 
 # Set page config
 st.set_page_config(
-    page_title="Harmful Speech Detector",
+    page_title="Writing Assistant",
     page_icon="🛡️",
     layout="wide"
 )
 
 # App title and description
-st.title("🛡️ Harmful Speech Detector")
-st.markdown("Enter text to check for harmful content. The app will analyze your text and suggest improvements.")
+st.title("💼 Writing Assistant")
+st.markdown("Enter your text to check for appropriateness and get suggestions for professional communications.")
+
+# Create parameters for the user to configure
+col1, col2, col3 = st.columns(3)
+with col1:
+    tone = st.selectbox("Tone", options=["Formal", "Professional", "Casual", "Friendly"], index=0)
+with col2:
+    audience = st.selectbox("Audience", options=["Clients", "Colleagues", "Management", "Team", "General"], index=0)
+with col3:
+    length = st.selectbox("Length", options=["Concise", "Standard", "Detailed"], index=1)
 
 # Create a text area for user input
 user_text = st.text_area("Enter your text here:", height=250)
@@ -26,8 +35,8 @@ result_container = st.container()
 # About section in sidebar
 with st.sidebar:
     st.subheader("About")
-    st.write("This app uses a custom LLM to detect harmful speech and suggest improvements.")
-    st.write("Types of harmful content detected:")
+    st.write("This app helps improve your business communications by analyzing text for problematic content and suggesting improvements.")
+    st.write("Types of problematic content detected:")
     st.markdown("- Threats")
     st.markdown("- Insults") 
     st.markdown("- Toxicity")
@@ -40,6 +49,12 @@ with st.sidebar:
     
     st.divider()
     st.write("Developed by **The Attic AI** as a proof of concept.")
+
+    # Add a placeholder for analysis time
+    analysis_time_placeholder = st.empty()
+    
+    # Add a placeholder for analysis time only
+    analysis_time_placeholder = st.empty()
 
 def sanitize_json_response(response_content):
     """
@@ -81,9 +96,8 @@ def sanitize_json_response(response_content):
                 # If all else fails, return a default structure
                 return {
                     "harmful": False,
-                    "tagged_text": response_content,
-                    "harmful_elements": [],
-                    "reworded_sentence": ""
+                    "harmful_sentences": [],
+                    "reworded_message": ""
                 }
 
 def fix_unbalanced_quotes(json_str):
@@ -139,43 +153,150 @@ def fix_unbalanced_quotes(json_str):
     return ''.join(result)
 
 # Function to call the API using OpenAI client
-def call_api(text):
+def call_api(text, tone, audience, length):
     """Call the API to analyze text using OpenAI client"""
     # Validate input before processing
     if not text or text.isspace():
         return {
             "harmful": False,
-            "tagged_text": "",
-            "harmful_elements": [],
-            "reworded_sentence": ""
+            "harmful_sentences": [],
+            "reworded_message": ""
         }
         
     try:
         # API configuration
         OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "your_api_key_here")
-        OPENAI_BASE_URL = st.secrets.get("OPENAI_BASE_URL", "your_base_url_here")
+        RUNPOD_BASE_URL = st.secrets.get("RUNPOD_BASE_URL", "your_base_url_here")
         
-        CHAT_PROMPT_TEMPLATE = st.secrets.get("CHAT_PROMPT_TEMPLATE", "your_chat_prompt_template_here")
-        MODEL_NAME = st.secrets.get("MODEL_NAME", "your_model_name_here")
-        TEMPERATURE = st.secrets.get("TEMPERATURE", "your_temperature_here")
+        # The prompt template to analyze harmful content
+        chat_prompt_template = """
+        You're an AI writing assistant specializing in improving business communications. Your task is to thoroughly analyze each sentence for problematic content, while ensuring the final reworded message maintains natural flow and context.
+        
+        Parameters:
+        - Tone: {tone}
+        - Context: {audience} 
+        - Alternative Length: {length}
+        
+        For the input text:
+        1. First pass - Identify problematic sentences by analyzing EACH SENTENCE individually
+        2. Flag ANY sentence containing unprofessional language, personal attacks, threats, or inappropriate content
+        3. Be especially alert for:
+           - Sentences that attack individuals or teams by name
+           - Statements threatening job security or creating a hostile environment
+           - Unprofessional or demeaning language, even if subtle
+           - Passive-aggressive phrasings that undermine team cohesion
+        4. Second pass - Consider the text as a whole to ensure coherent flow
+           - Ensure sentence transitions make sense in the reworded message
+           - Maintain the original meaning and purpose where appropriate
+           - Preserve the logical structure of paragraphs and arguments
+           - Create a cohesive final message that reads naturally
+        
+        Output this exact JSON format:
+        {{
+            "harmful": true/false,
+            "harmful_sentences": [
+                {{
+                    "sentence": "problematic sentence",
+                    "type": "threat/insult/severe_toxicity/toxicity/profanity/sexually_explicit/identity_attack/flirtation/passive_aggressive/sarcasm",
+                    "severity": "Critical/Non-critical", 
+                    "explanation": "Brief explanation of why the statement or content is problematic",
+                    "recommendation": "fix/remove", 
+                    "alternative": "suggested replacement that flows with surrounding context (LEAVE blank if the recommendation is remove)"
+                }}
+            ],
+            "reworded_message": "Improved version of entire text with natural transitions and coherent flow"
+        }}
+        
+        # If parameters are missing, use these defaults:
+        # Tone: formal
+        # Context: general
+        # Length: standard
+        
+        Example Input (Team Communication):
+        Tone: Professional
+        Context: Team
+        Length: Standard
+        
+        "The marketing team's latest campaign was a complete disaster. Whoever designed those graphics should be fired. I'm sick of having to fix everyone's mistakes. The client was furious and we might lose the account because of your incompetence. Let's meet tomorrow to discuss how to clean up this mess."
+        
+        Example Output:
+        {{
+            "harmful": true,
+            "harmful_sentences": [
+                {{
+                    "sentence": "The marketing team's latest campaign was a complete disaster.",
+                    "type": "toxicity",
+                    "severity": "Non-critical",
+                    "explanation": "Uses extreme negative language that can damage team morale and doesn't offer constructive feedback",
+                    "recommendation": "fix",
+                    "alternative": "The marketing team's latest campaign didn't meet our expected outcomes."
+                }},
+                {{
+                    "sentence": "Whoever designed those graphics should be fired.",
+                    "type": "threat",
+                    "severity": "Critical",
+                    "explanation": "Contains a direct threat to job security and publicly criticizes team member(s) in a way that creates a hostile work environment",
+                    "recommendation": "remove",
+                    "alternative": ""
+                }},
+                {{
+                    "sentence": "I'm sick of having to fix everyone's mistakes.",
+                    "type": "insult",
+                    "severity": "Critical",
+                    "explanation": "Includes a broad, personal attack on the team's competence and expresses inappropriate frustration",
+                    "recommendation": "remove",
+                    "alternative": ""
+                }},
+                {{
+                    "sentence": "The client was furious and we might lose the account because of your incompetence.",
+                    "type": "identity_attack",
+                    "severity": "Critical",
+                    "explanation": "Directly blames team members and labels them as incompetent, which is demeaning and creates an accusatory environment",
+                    "recommendation": "fix",
+                    "alternative": "The client expressed strong concerns about the work, which puts the account at risk."
+                }},
+                {{
+                    "sentence": "Let's meet tomorrow to discuss how to clean up this mess.",
+                    "type": "passive_aggressive",
+                    "severity": "Non-critical",
+                    "explanation": "The phrase 'clean up this mess' frames the situation in unnecessarily negative terms",
+                    "recommendation": "fix",
+                    "alternative": "Let's meet tomorrow to develop an action plan to address these issues."
+                }}
+            ],
+            "reworded_message": "The marketing team's latest campaign didn't meet our expected outcomes. The client expressed strong concerns about the work, which puts the account at risk. Let's meet tomorrow to develop an action plan to address these issues."
+        }}
+        
+        Now analyze this text:
+        """
+        
+        # Replace the parameter placeholders
+        formatted_prompt = chat_prompt_template.format(
+            tone=tone,
+            audience=audience,
+            length=length
+        )
         
         client = openai.OpenAI(
             api_key=OPENAI_API_KEY, 
-            base_url=OPENAI_BASE_URL,
+            base_url=RUNPOD_BASE_URL,
         )
 
-        final_message = CHAT_PROMPT_TEMPLATE + text
+        final_message = formatted_prompt + text
         
         start_time = time.perf_counter()
         response = client.chat.completions.create(
-            model=MODEL_NAME,
+            model="microsoft/phi-4",
             messages=[
                 {"role": "user", "content": final_message}
             ],
-            temperature=TEMPERATURE,
+            temperature=0.0,
         )
         elapsed_time = time.perf_counter() - start_time
         print(f"Execution time: {elapsed_time:.6f} seconds")
+        
+        # Store the elapsed time in session state to access it later
+        st.session_state.last_analysis_time = elapsed_time
 
         # Parse the response content as JSON
         try:
@@ -192,52 +313,110 @@ def call_api(text):
             st.code(response_content)  # Show the raw response for debugging
             return {
                 "harmful": False,
-                "tagged_text": text,
-                "harmful_elements": []
+                "harmful_sentences": [],
+                "reworded_message": ""
             }
             
     except Exception as e:
         st.error(f"Error calling API: {str(e)}")
         return {
             "harmful": False,
-            "tagged_text": text,
-            "harmful_elements": [],
-            "reworded_sentence": ""
+            "harmful_sentences": [],
+            "reworded_message": ""
         }
 
-# Function to generate a revised text based on the harmful elements
-def generate_revised_text(original_text, harmful_elements):
-    """Replace harmful elements with their alternatives"""
-    revised_text = original_text
+# Function to count critical and non-critical issues
+def count_issues(harmful_sentences):
+    """Count the number of critical and non-critical issues"""
+    total_issues = len(harmful_sentences)
+    critical_issues = sum(1 for sentence in harmful_sentences if sentence["severity"].lower() == "critical")
+    non_critical_issues = total_issues - critical_issues
     
-    # Sort elements by their position in reverse order to avoid index shifting
-    # We need to find the positions first
-    text_lower = original_text.lower()
-    elements_with_pos = []
+    return total_issues, critical_issues, non_critical_issues
+
+# Function to annotate text with problematic sentences
+def create_annotated_text(original_text, harmful_sentences):
+    """Create annotated text components highlighting problematic sentences"""
+    if not harmful_sentences:
+        return [original_text]
     
-    for element in harmful_elements:
-        term = element["text"].lower()
-        start_pos = text_lower.find(term)
+    # Find each problematic sentence in the original text
+    annotated_components = []
+    last_end = 0
+    
+    # Sort sentences by where they appear in the text
+    segments = []
+    for sentence_data in harmful_sentences:
+        sentence = sentence_data["sentence"]
+        start_pos = original_text.find(sentence, last_end)
         if start_pos != -1:
-            elements_with_pos.append({
-                "text": element["text"],
+            segments.append({
+                "text": sentence,
                 "start": start_pos,
-                "end": start_pos + len(term),
-                "alternative": element["alternative"]
+                "end": start_pos + len(sentence),
+                "type": sentence_data["type"],
+                "severity": sentence_data["severity"],
+                "alternative": sentence_data["alternative"]
             })
     
-    # Sort by start position in reverse order
-    elements_with_pos.sort(key=lambda x: x["start"], reverse=True)
+    # Sort segments by starting position
+    segments.sort(key=lambda x: x["start"])
     
-    # Replace each harmful element with its alternative
-    for element in elements_with_pos:
-        revised_text = (
-            revised_text[:element["start"]] + 
-            element["alternative"] + 
-            revised_text[element["end"]:]
-        )
+    # Build annotated text components
+    last_end = 0
+    for segment in segments:
+        # Add text before the harmful segment
+        if segment["start"] > last_end:
+            annotated_components.append(original_text[last_end:segment["start"]])
+        
+        # Add the harmful segment with annotation
+        harmful_text = segment["text"]
+        
+        # Set color based on type and severity
+        severity_colors = {
+            "Critical": {
+                "threat": "#FF6B6B",         # Bright red
+                "insult": "#FF9AA2",         # Soft red 
+                "severe_toxicity": "#DC143C", # Crimson
+                "toxicity": "#FF7F7F",       # Light coral
+                "profanity": "#FFCCCB",      # Light red
+                "sexually_explicit": "#DB7093", # Pale violet red
+                "identity_attack": "#DDA0DD", # Plum
+                "flirtation": "#D8BFD8",     # Thistle
+                "passive_aggressive": "#FFD700", # Gold
+                "sarcasm": "#FFA07A"         # Light salmon
+            },
+            "Non-critical": {
+                "threat": "#FFC3C3",         # Very light red
+                "insult": "#FFD1D7",         # Very light pink
+                "severe_toxicity": "#FFB6C1", # Light pink
+                "toxicity": "#FFE4E1",       # Misty rose
+                "profanity": "#FFDAB9",      # Peach puff
+                "sexually_explicit": "#E6E6FA", # Lavender
+                "identity_attack": "#F0E6FF", # Very light purple
+                "flirtation": "#FFF0F5",     # Lavender blush
+                "passive_aggressive": "#FFFACD", # Lemon chiffon 
+                "sarcasm": "#FAEBD7"         # Antique white
+            }
+        }
+        
+        color = severity_colors.get(segment["severity"], {}).get(segment["type"], "#FAA")
+        # Display the type and severity (in uppercase) separately
+        label = f"{segment['type']} - {segment['severity'].upper()}"
+        
+        annotated_components.append((harmful_text, label, color))
+        
+        last_end = segment["end"]
     
-    return revised_text
+    # Add any remaining text
+    if last_end < len(original_text):
+        annotated_components.append(original_text[last_end:])
+    
+    return annotated_components
+
+# Initialize session state for analysis time if it doesn't exist
+if 'last_analysis_time' not in st.session_state:
+    st.session_state.last_analysis_time = None
 
 # Button to analyze text
 if st.button("Analyze Text 🔎"):
@@ -247,97 +426,71 @@ if st.button("Analyze Text 🔎"):
     else:
         with st.spinner("Analyzing text..."):
             # Get analysis results from API
-            results = call_api(user_text)
+            results = call_api(user_text, tone, audience, length)
+            
+            # Count the issues
+            total_issues, critical_issues, non_critical_issues = count_issues(results["harmful_sentences"])
+            
+            # Update the analysis time in the sidebar
+            if st.session_state.last_analysis_time:
+                with st.sidebar:
+                    analysis_time_placeholder.info(f"⏱️ Analysis Time: {st.session_state.last_analysis_time:.2f} seconds")
+                    
+                    # Only display analysis time in sidebar
+                    analysis_time_placeholder.info(f"⏱️ Analysis Time: {st.session_state.last_analysis_time:.2f} seconds")
             
             with result_container:
                 st.subheader("Analysis Results")
                 
                 # Show safety status
                 if results["harmful"]:
-                    st.error("⚠️ Potentially harmful content detected")
+                    st.error("⚠️ Communication issues detected")
+                    
+                    # Add issue counters in columns with the same style as sidebar
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.info(f"📊 Total Issues Found: {total_issues}")
+                    
+                    with col2:
+                        # Use error color for critical issues
+                        if critical_issues > 0:
+                            st.error(f"🚨 Critical Issues: {critical_issues}")
+                        else:
+                            st.success("🚨 Critical Issues: 0")
+                    
+                    with col3:
+                        # Use warning color for non-critical issues
+                        if non_critical_issues > 0:
+                            st.warning(f"⚠️ Non-critical Issues: {non_critical_issues}")
+                        else:
+                            st.success("⚠️ Non-critical Issues: 0")
                 else:
-                    st.success("✅ Content appears safe")
+                    st.success("✅ Communication appears appropriate")
             
             # Display annotated text if harmful content is found
             if results["harmful"]:
-                st.markdown("### Highlighted Issues:")
+                # Show detailed breakdown of issues
+                st.markdown("### Issue Breakdown:")
                 
-                # Convert harmful_elements to a format suitable for annotation
-                harmful_elements = results["harmful_elements"]
+                for i, sentence in enumerate(results["harmful_sentences"]):
+                    with st.expander(f"Issue {i+1}: {sentence['type'].title()}", expanded=True):
+                        cols = st.columns([3, 1])
+                        with cols[0]:
+                            st.markdown(f"**Original:** {sentence['sentence']}")
+                            st.markdown(f"**Explanation:** {sentence['explanation']}")
+                            st.markdown(f"**Suggestion:** {sentence['alternative']}")
+                        with cols[1]:
+                            # Color-coded severity using annotated_text
+                            st.markdown("**Severity:**")
+                            if sentence['severity'].lower() == 'critical':
+                                annotated_text(("CRITICAL", "", "#FF6B6B"))
+                            else:
+                                annotated_text(("NON-CRITICAL", "", "#FFFACD"))
+                            st.markdown(f"**Recommendation:** {sentence['recommendation'].title()}")
                 
-                # We need to find the positions of each harmful element in the text
-                text_lower = user_text.lower()
-                segments = []
-                
-                for element in harmful_elements:
-                    term = element["text"].lower()
-                    start_pos = 0
-                    
-                    while start_pos < len(text_lower):
-                        pos = text_lower.find(term, start_pos)
-                        if pos == -1:
-                            break
-                        
-                        segments.append({
-                            "text": user_text[pos:pos+len(term)],
-                            "start": pos,
-                            "end": pos + len(term),
-                            "type": element["type"],
-                            "alternative": element["alternative"]
-                        })
-                        
-                        start_pos = pos + len(term)
-                
-                # Sort segments by starting position
-                segments.sort(key=lambda x: x["start"])
-                
-                # Build annotated text components
-                annotated_components = []
-                last_end = 0
-                
-                for segment in segments:
-                    # Add text before the harmful segment
-                    if segment["start"] > last_end:
-                        annotated_components.append(user_text[last_end:segment["start"]])
-                    
-                    # Add the harmful segment with annotation
-                    harmful_text = segment["text"]
-                    
-                    # Set color based on type
-                    color = {
-                        "threat": "#F08080",           # Light coral
-                        "insult": "#FF9AA2",           # Soft red
-                        "severe_toxicity": "#DC143C",  # Crimson
-                        "toxicity": "#FFB7B2",         # Salmon
-                        "profanity": "#FFDAC1",        # Peach
-                        "sexually_explicit": "#DB7093", # Pale violet red
-                        "identity_attack": "#DDA0DD",  # Plum
-                        "flirtation": "#D8BFD8",       # Thistle
-                        "passive_aggressive": "#FDFD96", # Yellow
-                        "sarcasm": "#20B2AA", # Light Sea Green
-                        "harmful_content": "#faa"      # Default
-                    }.get(segment["type"], "#faa")
-                    
-                    annotated_components.append((harmful_text, segment["type"], color))
-                    
-                    last_end = segment["end"]
-                
-                # Add any remaining text
-                if last_end < len(user_text):
-                    annotated_components.append(user_text[last_end:])
-                
-                # Display the annotated text
-                annotated_text(*annotated_components)
-                
-                # Generate and show suggested revision
-                suggested_text = generate_revised_text(user_text, results["harmful_elements"])
-                
-                # Show alternatives for each harmful element
-                st.markdown("### Alternative Suggestions:")
-                for element in results["harmful_elements"]:
-                    st.markdown(f"- Replace '**{element['text']}**' with '**{element['alternative']}**' ({element['type']})")
-                
-                st.markdown("### Suggested Revision:")
+                # Show the reworded message
+                st.markdown("### Improved Version:")
                 st.success(results["reworded_message"])
             
             # Show raw analysis (can be hidden in production)
